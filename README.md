@@ -4,15 +4,19 @@
 -- 概要 --
   特定キーを押すとTwitchチャットへ定型文を送信できるアプリです。
 
-　※ウイルス検出される場合は、ウイルス対策ソフトに例外として追加をお願いします。
-　　それでも嫌な場合は、ソースコードがあるのでpythonをインストールし、実行してください。
-   (pythonインストール方法は直接DM下さい。。)
 
 
 
 -- 使用手順 --
-■ 初期設定
+■ Pythonインストール
+https://www.python.org/ftp/python/3.8.3/python-3.8.3.exe
+このURLからPythonをインストール。
+※※注意
+　　インストール時の「Add Python 3.8 to PATH」をチェックいれること！
 
+
+
+■ 初期設定
 ①Bot用Twitchサブアカウントを作成する。
 Twitchで新規にBot用のアカウントを作成します。
 
@@ -70,8 +74,8 @@ Trans_OAUTH             = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ■ 使い方
 [起動時]
-  TwiDuo.exeファイルと同じフォルダ内にconfig.iniを配置し、
-  TwiDuo.exeを起動。
+  TwiDuo.pyファイルと同じフォルダ内にconfig.iniを配置(デフォルトでされてます)し、
+  start.batを起動。
 
 [終了時]
 　　出てきたウインドウを閉じる。
