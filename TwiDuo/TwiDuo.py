@@ -9,7 +9,9 @@ if not sys.warnoptions:
     warnings.simplefilter("ignore")
 
 
-version = '1.0.0'
+version = '1.0.1'
+# v1.0.1    : 再接続動作を追加
+
 
 # config keys
 config = {'Twitch_Channel':'',
@@ -79,6 +81,7 @@ mojilist.val.append(config['moji7'])
 #config.read('config.ini', 'UTF-8')
 
 WAITTM = 0.2                    # 待機時間
+IRCREFTIME = 120
 SERVER = 'irc.chat.twitch.tv'   # Twitch IRCサーバ
 PORT = 6667                     # 接続ポート
 
@@ -106,19 +109,20 @@ class timebkdata:
 #####################################
 # キーの取得と定型文の送信処理
 #####################################
-def keyinterrupt():
+def keyinterrupt(lock):
     def handle_events(args):
         if isinstance(args, KeyboardEvent):
             if (args.current_key in keylist.val)and(args.event_type == 'key down'):
                 if time.time() > (timebkdata.val + 3.0):
-                    out_text = ""
-                    for ii in range(len(keylist.val)):
-                        if keylist.val[ii] == args.current_key:
-                            out_text = mojilist.val[ii]
-                            break
-                    print(out_text)
-                    chatsnd(config["Twitch_Channel"], out_text)
-                    timebkdata.val = time.time()
+                    with lock:
+                        out_text = ""
+                        for ii in range(len(keylist.val)):
+                            if keylist.val[ii] == args.current_key:
+                                out_text = mojilist.val[ii]
+                                break
+                        print(out_text)
+                        irc.chatsnd(config["Twitch_Channel"], out_text)
+                        timebkdata.val = time.time()
 
     hk = Hook()                     # make a new instance of PyHooked
     hk.handler = handle_events      # add a new shortcut ctrl+a, or triggered on mouseover of (300,400)
@@ -132,43 +136,57 @@ def get_keys_from_value(d, val):
 #####################################
 # IRC接続処理
 #####################################
-#open a socket to handle the connection
-IRC = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #open a connection with the server
-def irc_conn():
-    IRC.connect((SERVER, PORT))
-#    IRC.settimeout(1)
+class irc_module:
+    def __init__(self):
+        self.irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def irc_conn(self):
+        try:
+            #open a socket to handle the connection
+            self.irc.connect((SERVER, PORT))
+            self.irc.settimeout(IRCREFTIME)
+        except Exception as e:
+            print(e)
 
-#simple function to send data through the socket
-def send_data(command):
-    moji = command + '\n'
-    IRC.send(moji.encode(encoding='utf-8'))
-    print(moji)
+    def irc_close(self):
+        try:
+            self.irc.close()
+        except Exception as e:
+            print(e)
 
-#join the channel
-def join(channel):
-    send_data("JOIN {0}".format(channel))
-    print(rcv_data())
+    #simple function to send data through the socket
+    def send_data(self, command):
+        moji = command + '\n'
+        try:
+            self.irc.send(moji.encode(encoding='utf-8'))
+            print(moji)
+        except Exception as e:
+            print(e)
 
-#send login data (customizable)
-def login(username, password):
-    send_data("PASS oauth:{0}".format(password))
-    send_data("NICK {0}".format(username))
-    print(rcv_data())
+    #join the channel
+    def join(self, channel):
+        self.send_data("JOIN {0}".format(channel))
+        print(self.rcv_data())
 
-def chatsnd(channel, msg):
-    send_data("PRIVMSG #{0} :{1}".format(channel, msg))
+    #send login data (customizable)
+    def login(self, username, password):
+        self.send_data("PASS oauth:{0}".format(password))
+        self.send_data("NICK {0}".format(username))
+        print(self.rcv_data())
 
+    def chatsnd(self, channel, msg):
+        self.send_data("PRIVMSG #{0} :{1}".format(channel, msg))
 
-def rcv_data():
-    rcvdata = ""
-    try:
-        rcvdata = IRC.recv(1024).decode()
-    except Exception as e:
-        print(e)
-    return rcvdata
+    def rcv_data(self):
+        rcvdata = ""
+        try:
+            rcvdata = self.irc.recv(1024).decode()
+        except Exception as e:
+            print(e)
+        return rcvdata
 
-
+    def recv(size):
+        return self.irc.recv(size)
 
 # メイン処理 ###########################
 # 初期表示 -----------------------
@@ -178,24 +196,43 @@ print('Connect to the channel   : {}'.format(config['Twitch_Channel']))
 time.sleep(WAITTM)
 print('Bot Username      : {}'.format(config['Bot_Username']))
 
+irc = irc_module()
+irc.irc_conn()
+irc.login(config['Bot_Username'], config['Bot_OAUTH'])
+irc.join(config["Twitch_Channel"])
 
-# IRC接続&ログイン処理
-irc_conn()
-login(config['Bot_Username'], config['Bot_OAUTH'])
-join(config["Twitch_Channel"])
-
+lock = threading.RLock()
 # キーキャプチャ用スレッド起動 ################
 # キーの取得と定型文の送信
-thread_keyinterrupt = threading.Thread(target=keyinterrupt)
+thread_keyinterrupt = threading.Thread(target=keyinterrupt, args=(lock,))
 thread_keyinterrupt.start()
 
-print("Init End")
+print("！！初期化終了！！")
 
-# チャットクライアント無限ループ -----------
+ircref = time.time()
 while True:
-    buffer = IRC.recv(1024)
-    msg = buffer.split()
-    if msg[0] == "PING": #check if server have sent ping command
-        send_data("PONG %s" % msg[1]) #answer with pong as per RFC 1459
-        print("PONG send")
-    time.sleep(3)
+    try:
+        buffer = irc.recv(1024)
+        msg = buffer.split()
+        for ii in range(0, len(msg)):
+            if msg[ii] == "PING": #check if server have sent ping command
+                if (ii+1) < len(msg):
+                    send_data("PONG %s" % msg[ii+1]) #answer with pong as per RFC 1459
+                    print("PONG send")
+    except:
+        pass
+
+    if time.time() > ircref + IRCREFTIME:
+        with lock:
+            print("")
+            print("--再接続処理--")
+            print("")
+            irc.irc_close()
+            irc = irc_module()
+            irc.irc_conn()
+            irc.login(config['Bot_Username'], config['Bot_OAUTH'])
+            irc.join(config["Twitch_Channel"])
+            print("")
+            print("--再接続処理 完了--")
+            print("")
+        ircref = time.time()
